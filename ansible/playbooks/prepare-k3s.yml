@@ -1,0 +1,88 @@
+---
+- name: Preparar servidores para K3s
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    - name: Criar diretórios para dados do Kubernetes
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+      loop:
+        - "{{ k3s_data_dir }}"
+        - "{{ kubelet_data_dir }}"
+        - "{{ k3s_storage_dir }}"
+
+    - name: Instalar pacotes necessários
+      ansible.builtin.apt:
+        name:
+          - curl
+          - ca-certificates
+          - iptables
+          - kmod
+          - procps
+        state: present
+        update_cache: true
+
+    - name: Carregar modulo overlay
+      ansible.builtin.command:
+        cmd: modprobe overlay
+      changed_when: false
+
+    - name: Carregar modulo br_netfilter
+      ansible.builtin.command:
+        cmd: modprobe br_netfilter
+      changed_when: false
+
+    - name: Tornar modulos persistentes
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/k3s.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          overlay
+          br_netfilter
+
+    - name: Configurar parametros de rede do Kubernetes
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/99-k3s.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          net.ipv4.ip_forward = 1
+          net.bridge.bridge-nf-call-iptables = 1
+          net.bridge.bridge-nf-call-ip6tables = 1
+
+    - name: Aplicar configuracoes sysctl
+      ansible.builtin.command:
+        cmd: /usr/sbin/sysctl --system 
+      changed_when: false
+
+    - name: Desativar swap atualmente ativa
+      ansible.builtin.command:
+        cmd: swapoff -a
+      when: ansible_swaptotal_mb > 0
+      changed_when: true
+
+    - name: Desativar swap permanentemente no fstab
+      ansible.builtin.replace:
+        path: /etc/fstab
+        regexp: '^([^#].*\s+swap\s+.*)$'
+        replace: '# \1'
+
+    - name: Verificar espaco destinado ao K3s
+      ansible.builtin.command:
+        cmd: df -h "{{ k3s_data_dir }}"
+      register: k3s_disk
+      changed_when: false
+
+    - name: Mostrar armazenamento disponivel
+      ansible.builtin.debug:
+        var: k3s_disk.stdout_lines
