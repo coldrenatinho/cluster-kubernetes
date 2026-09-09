@@ -1,0 +1,55 @@
+---
+- name: Configurar rede Ethernet privada do cluster
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    - name: Garantir que ifupdown esteja instalado
+      ansible.builtin.apt:
+        name:
+          - ifupdown
+          - iproute2
+        state: present
+        update_cache: true
+
+    - name: Criar configuração persistente da interface do cluster
+      ansible.builtin.copy:
+        dest: "/etc/network/interfaces.d/k8s-cluster"
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Gerenciado pelo Ansible
+          allow-hotplug {{ k3s_flannel_iface }}
+          iface {{ k3s_flannel_iface }} inet static
+              address {{ cluster_ip }}/24
+      notify: Aplicar rede do cluster
+
+    - name: Garantir que interface esteja habilitada
+      ansible.builtin.command:
+        cmd: "ip link set {{ k3s_flannel_iface }} up"
+      changed_when: false
+
+    - name: Verificar se IP do cluster ja esta configurado
+      ansible.builtin.shell:
+        cmd: >
+          ip -4 addr show dev {{ k3s_flannel_iface }}
+          | grep -q '{{ cluster_ip }}/24'
+      register: cluster_ip_check
+      changed_when: false
+      failed_when: false
+
+    - name: Aplicar IP imediatamente quando necessario
+      ansible.builtin.command:
+        cmd: "ip addr add {{ cluster_ip }}/24 dev {{ k3s_flannel_iface }}"
+      when: cluster_ip_check.rc != 0
+
+  handlers:
+
+    - name: Aplicar rede do cluster
+      ansible.builtin.shell:
+        cmd: |
+          ifdown {{ k3s_flannel_iface }} 2>/dev/null || true
+          ifup {{ k3s_flannel_iface }}

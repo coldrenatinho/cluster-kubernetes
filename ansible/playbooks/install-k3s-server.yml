@@ -1,0 +1,67 @@
+---
+- name: Instalar K3s Server
+  hosts: k3s_server
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    - name: Criar diretório de configuração do K3s
+      ansible.builtin.file:
+        path: /etc/rancher/k3s
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Criar diretório de storage local
+      ansible.builtin.file:
+        path: "{{ k3s_storage_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Configurar K3s Server
+      ansible.builtin.copy:
+        dest: /etc/rancher/k3s/config.yaml
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          data-dir: "{{ k3s_data_dir }}"
+          node-ip: "{{ cluster_ip }}"
+          advertise-address: "{{ cluster_ip }}"
+          flannel-iface: "{{ k3s_flannel_iface }}"
+          default-local-storage-path: "{{ k3s_storage_dir }}"
+
+          tls-san:
+            - "{{ ansible_host }}"
+            - "{{ cluster_ip }}"
+      notify: Reiniciar K3s
+
+    - name: Baixar instalador oficial do K3s
+      ansible.builtin.get_url:
+        url: https://get.k3s.io
+        dest: /tmp/install-k3s.sh
+        mode: "0755"
+
+    - name: Instalar K3s Server
+      ansible.builtin.command:
+        cmd: /tmp/install-k3s.sh
+        creates: /usr/local/bin/k3s
+      environment:
+        INSTALL_K3S_EXEC: server
+
+    - name: Garantir que K3s esteja ativo
+      ansible.builtin.service:
+        name: k3s
+        state: started
+        enabled: true
+
+  handlers:
+
+    - name: Reiniciar K3s
+      ansible.builtin.service:
+        name: k3s
+        state: restarted

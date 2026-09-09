@@ -1,0 +1,84 @@
+---
+- name: Obter token do servidor K3s
+  hosts: k3s_server
+  become: true
+  gather_facts: false
+
+  tasks:
+
+    - name: Ler token do cluster
+      ansible.builtin.slurp:
+        src: "{{ k3s_data_dir }}/server/node-token"
+      register: k3s_token_raw
+      no_log: true
+
+    - name: Armazenar token temporariamente
+      ansible.builtin.set_fact:
+        k3s_cluster_token: "{{ k3s_token_raw.content | b64decode | trim }}"
+      no_log: true
+
+
+- name: Instalar K3s Worker
+  hosts: k3s_workers
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    - name: Criar diretório de configuração do K3s
+      ansible.builtin.file:
+        path: /etc/rancher/k3s
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Criar diretório de storage
+      ansible.builtin.file:
+        path: "{{ k3s_storage_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Criar configuração do K3s Agent
+      ansible.builtin.copy:
+        dest: /etc/rancher/k3s/config.yaml
+        owner: root
+        group: root
+        mode: "0600"
+        content: |
+          server: "https://{{ hostvars[groups['k3s_server'][0]].cluster_ip }}:6443"
+          token: "{{ hostvars[groups['k3s_server'][0]].k3s_cluster_token }}"
+
+          data-dir: "{{ k3s_data_dir }}"
+          node-ip: "{{ cluster_ip }}"
+          flannel-iface: "{{ k3s_flannel_iface }}"
+      no_log: true
+      notify: Reiniciar K3s Agent
+
+    - name: Baixar instalador oficial do K3s
+      ansible.builtin.get_url:
+        url: https://get.k3s.io
+        dest: /tmp/install-k3s.sh
+        mode: "0755"
+
+    - name: Instalar K3s Agent
+      ansible.builtin.command:
+        cmd: /tmp/install-k3s.sh
+        creates: /usr/local/bin/k3s
+      environment:
+        INSTALL_K3S_EXEC: agent
+
+    - name: Garantir que K3s Agent esteja ativo
+      ansible.builtin.service:
+        name: k3s-agent
+        state: started
+        enabled: true
+
+  handlers:
+
+    - name: Reiniciar K3s Agent
+      ansible.builtin.service:
+        name: k3s-agent
+        state: restarted
