@@ -1,0 +1,42 @@
+---
+- name: Preparar servidores do homelab
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    - name: Atualizar cache do APT
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Instalar ferramentas básicas
+      ansible.builtin.apt:
+        name:
+          - curl
+          - git
+          - vim
+          - htop
+          - jq
+          - ca-certificates
+          - gnupg
+          - unzip
+          - rsync
+          - ethtool
+          - iproute2
+        state: present
+
+    - name: Garantir que SSH esteja habilitado
+      ansible.builtin.service:
+        name: ssh
+        state: started
+        enabled: true
+
+    - name: Registrar hosts da rede privada do cluster
+      ansible.builtin.blockinfile:
+        path: /etc/hosts
+        marker: "# {mark} ANSIBLE MANAGED HOMELAB"
+        block: |
+          10.10.10.11 k8s-node01-cluster
+          10.10.10.12 k8s-node02-cluster
