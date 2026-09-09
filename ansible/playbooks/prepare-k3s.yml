@@ -26,6 +26,7 @@
           - iptables
           - kmod
           - procps
+          - util-linux
         state: present
         update_cache: true
 
