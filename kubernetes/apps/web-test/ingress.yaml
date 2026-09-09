@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+
+metadata:
+  name: web-test
+  namespace: lab
+
+spec:
+  ingressClassName: traefik
+
+  rules:
+    - host: web-test.lab.home.arpa
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-test
+                port:
+                  number: 80
